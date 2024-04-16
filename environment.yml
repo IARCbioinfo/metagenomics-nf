@@ -1,4 +1,4 @@
-name: template-nf
+name: metagenomics-nf
 channels:
   - conda-forge
   - bioconda
