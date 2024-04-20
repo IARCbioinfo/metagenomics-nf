@@ -4,7 +4,7 @@
 [![Docker Hub](https://img.shields.io/badge/docker-ready-blue.svg)](https://hub.docker.com/r/iarcbioinfo/template-nf/)
 
 ## Description
-Nextflow pipeline running software centrifuge to detect reads mapping to microbial or viral references
+Nextflow pipeline running software centrifuge to detect reads mapping to microbial or viral references, and optionally software virusbreakend to detect viral integration
 
 ## Dependencies
 
@@ -12,9 +12,11 @@ Nextflow pipeline running software centrifuge to detect reads mapping to microbi
 2. External software:
 - [centrifuge](https://ccb.jhu.edu/software/centrifuge/manual.shtml)
 - [samtools](https://www.htslib.org/doc/samtools.html)
+- [virusbreakend](https://github.com/PapenfussLab/gridss/blob/master/VIRUSBreakend_Readme.md)
 
 You can avoid installing all the external software by only installing Docker. See the [IARC-nf](https://github.com/IARCbioinfo/IARC-nf) repository for more information.
 
+To use virusbreakend, you will need to download the database. See help at https://github.com/PapenfussLab/gridss/blob/master/VIRUSBreakend_Readme.md
 
 ## Input
   | Type      | Description     |
@@ -26,13 +28,15 @@ You can avoid installing all the external software by only installing Docker. Se
   * #### Optional
 | Name      | Default value | Description     |
 |-----------|---------------|-----------------|
-| --output_folder   |        metagenomics-nf_results | ...... |
+| --output_folder   |         | metagenomics-nf_results |
 | --cpu    |            2 | Number of CPUs |
 | --mem    |            8 | Memory in Gb |
+|  --ref       |    | Host reference genome   |
+| --virusbreakend_db | |  Virusbreakend database (e.g., virusbreakenddb_20210401 from https://github.com/PapenfussLab/gridss/blob/master/VIRUSBreakend_Readme.md) | 
 
   * #### Flags
 
-Flags are special parameters without value.
+Flags are special parameters without value. The virusbreakend process will be triggered automatically if the virusbreakend_db parameter is specified.
 
 | Name      | Description     |
 |-----------|-----------------|
@@ -49,6 +53,7 @@ Flags are special parameters without value.
   |-----------|---------------|
   | *_centrifuge_report.tsv   | Centrifuge summary reports per sample |
   | *_centrifuge_results.txt    | Centrifuge output per sample |
+  | *virusbreakend.vcf | Virusbreakend vcf file output |
 
 
 
