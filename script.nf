@@ -45,20 +45,28 @@ process bam2fq {
     path(bam)
 
     output:
-    tuple val(file_tag), file("*.fastq.gz")
+    tuple val(file_tag), file("*_unmapped_{1,2}.fastq.gz")
 
     shell:
     file_tag = bam.baseName
     '''
-    samtools fastq -f 4 --threads !{params.cpu} -1 !{file_tag}_1.fastq.gz -2 !{file_tag}_2.fastq.gz !{bam}
+    samtools fastq -f 4 -F8 --threads !{params.cpu} -1 !{file_tag}_unmapped1_1.fastq.gz -2 !{file_tag}_unmapped1_2.fastq.gz -s !{file_tag}_unmapped1_single.fastq.gz -N !{bam} 
+    samtools fastq -f 8 -F4 --threads !{params.cpu} -1 !{file_tag}_unmapped2_1.fastq.gz -2 !{file_tag}_unmapped2_2.fastq.gz -s !{file_tag}_unmapped2_single.fastq.gz -N !{bam}
+    samtools fastq -f 12 --threads !{params.cpu} -1 !{file_tag}_unmappedpair_1.fastq.gz -2 !{file_tag}_unmappedpair_2.fastq.gz -s !{file_tag}_unmappedpair_single.fastq.gz -N !{bam}
+    rm *single.fastq.gz
+    cat !{file_tag}_*_1.fastq.gz > !{file_tag}_unmapped_1.fastq.gz 
+    cat !{file_tag}_*_2.fastq.gz > !{file_tag}_unmapped_2.fastq.gz
+    rm !{file_tag}_unmapped[12]_[12].fastq.gz
+    rm !{file_tag}_unmappedpair_[12].fastq.gz
     '''
-} //samtools view -h -u -f 4 !{bam} | samtools fastq -1 !{file_tag}_1.fastq.gz -2 !{file_tag}_2.fastq.gz -
+} //samtools view -h -u -f 12 !{bam} | samtools fastq -1 !{file_tag}_1.fastq.gz -2 !{file_tag}_2.fastq.gz -
+
 
 //run centrifuge
 process centrifuge {
     cpus params.cpu
     memory params.mem+'G'
-    tag { file_tag }
+    tag { ID }
         
 	input:
     tuple val(ID), path(fastqpairs)
@@ -69,16 +77,41 @@ process centrifuge {
 
     shell:
     '''
-    centrifuge -x p+h+v -1 !{fastqpairs[0]} -2 !{fastqpairs[1]} --report-file !{ID}_centrifuge_report.tsv -S !{ID}_centrifuge_results.txt
+    centrifuge -x p_compressed+h+v -1 !{fastqpairs[0]} -2 !{fastqpairs[1]} -t -p !{params.cpu} --met-file !{ID}_centrifuge_metrics.txt --report-file !{ID}_centrifuge_report.tsv -S !{ID}_centrifuge_results.txt
     '''
 }
 
+//run viral integration detection with virusbreakend
+process virusbreakend {
+    cpus params.cpu
+    memory params.mem+'G'
+    tag { ID }
+        
+	input:
+    path(bam)
+    path(host_reference)
+    path(virusbreakend_db)
+
+    output:
+    path("${ID}_virusbreakend.vcf")
+    publishDir params.output_folder+"/virusbreakend/", mode: 'copy'
+
+    shell:
+    '''
+    virusbreakend \
+    -r !{host_reference} \
+    -o !{ID}_virusbreakend.vcf \
+    --db !{virusbreakend_db} \
+    !{bam}
+    '''
+}
 
 
 // DSL2 workflow to run the processes
 workflow{
     params.cpu = 2
     params.mem  = 8
+    params.output_folder = "metagenomics-nf_results"
   //display help information
   if (params.help){ show_help(); exit 0;}
   //display the header of the tool
@@ -95,6 +128,11 @@ workflow{
 
   //run centrifuge
   bam2fq(bams) | centrifuge
+
+  //if virusbreakend params given, run virusbreakend
+  if(params.virusbreakend_db){
+    virusbreakend(bam,params.ref,params.virusbreakend_db)
+  }
 }
 
 
