@@ -32,6 +32,8 @@ def show_help (){
       --output_folder        [string] name of output folder
       --cpu                  [Integer]  Number of CPUs[def:2]
       --mem 		         [Integer] Max memory [def:8Gb]
+      --ref               [file] Host reference genome fasta file (e.g., hg38.fa)
+      --virusbreakend_db    [folder] Virusbreakend database (e.g., virusbreakenddb_20210401 from https://github.com/PapenfussLab/gridss/blob/master/VIRUSBreakend_Readme.md)
       """.stripIndent()
 }
 
@@ -50,9 +52,9 @@ process bam2fq {
     shell:
     file_tag = bam.baseName
     '''
-    samtools fastq -f 4 -F8 --threads !{params.cpu} -1 !{file_tag}_unmapped1_1.fastq.gz -2 !{file_tag}_unmapped1_2.fastq.gz -s !{file_tag}_unmapped1_single.fastq.gz -N !{bam} 
-    samtools fastq -f 8 -F4 --threads !{params.cpu} -1 !{file_tag}_unmapped2_1.fastq.gz -2 !{file_tag}_unmapped2_2.fastq.gz -s !{file_tag}_unmapped2_single.fastq.gz -N !{bam}
-    samtools fastq -f 12 --threads !{params.cpu} -1 !{file_tag}_unmappedpair_1.fastq.gz -2 !{file_tag}_unmappedpair_2.fastq.gz -s !{file_tag}_unmappedpair_single.fastq.gz -N !{bam}
+    samtools collate -uOn 128 !{bam} tmp1_!{file_tag} | samtools fastq -f 4 -F8 --threads !{params.cpu} -1 !{file_tag}_unmapped1_1.fastq.gz -2 !{file_tag}_unmapped1_2.fastq.gz -s !{file_tag}_unmapped1_single.fastq.gz -N -
+    samtools collate -uOn 128 !{bam} tmp2_!{file_tag} | samtools fastq -f 8 -F4 --threads !{params.cpu} -1 !{file_tag}_unmapped2_1.fastq.gz -2 !{file_tag}_unmapped2_2.fastq.gz -s !{file_tag}_unmapped2_single.fastq.gz -N -
+    samtools collate -uOn 128 !{bam} tmp3_!{file_tag} | samtools fastq -f 12 --threads !{params.cpu} -1 !{file_tag}_unmappedpair_1.fastq.gz -2 !{file_tag}_unmappedpair_2.fastq.gz -s !{file_tag}_unmappedpair_single.fastq.gz -N -
     rm *single.fastq.gz
     cat !{file_tag}_*_1.fastq.gz > !{file_tag}_unmapped_1.fastq.gz 
     cat !{file_tag}_*_2.fastq.gz > !{file_tag}_unmapped_2.fastq.gz
@@ -77,7 +79,7 @@ process centrifuge {
 
     shell:
     '''
-    centrifuge -x p_compressed+h+v -1 !{fastqpairs[0]} -2 !{fastqpairs[1]} -t -p !{params.cpu} --met-file !{ID}_centrifuge_metrics.txt --report-file !{ID}_centrifuge_report.tsv -S !{ID}_centrifuge_results.txt
+    centrifuge -x p_compressed+h+v -1 !{fastqpairs[0]} -2 !{fastqpairs[1]} -t -p !{params.cpu} --report-file !{ID}_centrifuge_report.tsv -S !{ID}_centrifuge_results.txt
     '''
 }
 
@@ -90,18 +92,19 @@ process virusbreakend {
 	input:
     path(bam)
     path(host_reference)
-    path(virusbreakend_db)
 
     output:
-    path("${ID}_virusbreakend.vcf")
+    path("${ID}_virusbreakend.vcf*")
+    path("${ID}_tmp/*/*.kraken2.report.all.txt")
     publishDir params.output_folder+"/virusbreakend/", mode: 'copy'
 
     shell:
+    ID = bam.baseName
     '''
-    virusbreakend \
+    virusbreakend -t !{params.cpu} --gridssargs "--skipsoftcliprealignment" -w !{ID}_tmp \
     -r !{host_reference} \
     -o !{ID}_virusbreakend.vcf \
-    --db !{virusbreakend_db} \
+    --db !{params.virusbreakend_db} \
     !{bam}
     '''
 }
@@ -131,7 +134,7 @@ workflow{
 
   //if virusbreakend params given, run virusbreakend
   if(params.virusbreakend_db){
-    virusbreakend(bam,params.ref,params.virusbreakend_db)
+    virusbreakend(bams,params.ref)//,params.virusbreakend_db)
   }
 }
 
