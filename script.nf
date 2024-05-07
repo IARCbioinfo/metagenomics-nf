@@ -47,22 +47,20 @@ process bam2fq {
     path(bam)
 
     output:
-    tuple val(file_tag), file("*_unmapped_{1,2}.fastq.gz")
+    tuple val(file_tag), file("*_sorted_{1,2}.fastq.gz")
 
     shell:
     file_tag = bam.baseName
+    sort_threads = [params.cpu.intdiv(2) - 1,1].max()
+    fastq_threads = [params.cpu.intdiv(2) - 1,1].max()
+    sort_mem     = params.mem.div(4)
     '''
-    samtools collate -uOn 128 !{bam} tmp1_!{file_tag} | samtools fastq -f 4 -F8 --threads !{params.cpu} -1 !{file_tag}_unmapped1_1.fastq.gz -2 !{file_tag}_unmapped1_2.fastq.gz -s !{file_tag}_unmapped1_single.fastq.gz -N -
-    samtools collate -uOn 128 !{bam} tmp2_!{file_tag} | samtools fastq -f 8 -F4 --threads !{params.cpu} -1 !{file_tag}_unmapped2_1.fastq.gz -2 !{file_tag}_unmapped2_2.fastq.gz -s !{file_tag}_unmapped2_single.fastq.gz -N -
-    samtools collate -uOn 128 !{bam} tmp3_!{file_tag} | samtools fastq -f 12 --threads !{params.cpu} -1 !{file_tag}_unmappedpair_1.fastq.gz -2 !{file_tag}_unmappedpair_2.fastq.gz -s !{file_tag}_unmappedpair_single.fastq.gz -N -
-    rm *single.fastq.gz
-    cat !{file_tag}_*_1.fastq.gz > !{file_tag}_unmapped_1.fastq.gz 
-    cat !{file_tag}_*_2.fastq.gz > !{file_tag}_unmapped_2.fastq.gz
-    rm !{file_tag}_unmapped[12]_[12].fastq.gz
-    rm !{file_tag}_unmappedpair_[12].fastq.gz
+    samtools view -h -f 4 -F8 --threads !{params.cpu} -o !{file_tag}_unmapped1.bam !{bam}
+    samtools view -h -f 8 -F4 --threads !{params.cpu} -o !{file_tag}_unmapped2.bam !{bam}
+    samtools view -h -f 12 --threads !{params.cpu} -o !{file_tag}_unmappedpair.bam !{bam}
+    samtools merge -u --threads 1 !{file_tag}_unmapped*.bam -o - | samtools sort -n -@ !{sort_threads} -m !{sort_mem}G -T !{file_tag}_tmp - | samtools fastq --threads !{fastq_threads} -1 !{file_tag}_sorted_1.fastq.gz -2 !{file_tag}_sorted_2.fastq.gz -N -
     '''
-} //samtools view -h -u -f 12 !{bam} | samtools fastq -1 !{file_tag}_1.fastq.gz -2 !{file_tag}_2.fastq.gz -
-
+}
 
 //run centrifuge
 process centrifuge {
@@ -92,23 +90,23 @@ process virusbreakend {
 	input:
     path(bam)
     path(host_reference)
+    path(host_reference_fai)
 
     output:
     path("${ID}_virusbreakend.vcf*")
-    path("${ID}_tmp/*/*.kraken2.report.all.txt")
+    path("${ID}")
     publishDir params.output_folder+"/virusbreakend/", mode: 'copy'
 
     shell:
     ID = bam.baseName
     '''
-    virusbreakend -t !{params.cpu} --gridssargs "--skipsoftcliprealignment" -w !{ID}_tmp \
+    virusbreakend -t !{params.cpu} -w !{ID} \
     -r !{host_reference} \
     -o !{ID}_virusbreakend.vcf \
     --db !{params.virusbreakend_db} \
     !{bam}
     '''
 }
-
 
 // DSL2 workflow to run the processes
 workflow{
@@ -134,7 +132,7 @@ workflow{
 
   //if virusbreakend params given, run virusbreakend
   if(params.virusbreakend_db){
-    virusbreakend(bams,params.ref)//,params.virusbreakend_db)
+    virusbreakend(bams,params.ref,params.ref+".fai")//,params.virusbreakend_db)
   }
 }
 
